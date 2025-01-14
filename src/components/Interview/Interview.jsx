@@ -21,7 +21,7 @@ class Interview extends BaseComponent {
     currentQuestionIndex: 0,
     userAnswers: {},
     feedback: {},
-    isAnswering: false,
+    isAnswering: true, // Changed to true by default
     currentAnswer: '',
     isSubmitting: false
   };
@@ -29,6 +29,8 @@ class Interview extends BaseComponent {
   componentDidUpdate(prevProps) {
     if (prevProps.questions !== this.props.questions && this.props.questions) {
       this.categorizeQuestions(this.props.questions);
+      // Ensure answer box is expanded when new questions are generated
+      this.setState({ isAnswering: true });
     }
   }
 
@@ -147,7 +149,7 @@ class Interview extends BaseComponent {
     if (this.state.currentQuestionIndex < allQuestions.length - 1) {
       this.setState(prevState => ({
         currentQuestionIndex: prevState.currentQuestionIndex + 1,
-        isAnswering: false
+        isAnswering: true // Changed to true to keep answer box expanded
       }));
     }
   };
@@ -156,7 +158,7 @@ class Interview extends BaseComponent {
     if (this.state.currentQuestionIndex > 0) {
       this.setState(prevState => ({
         currentQuestionIndex: prevState.currentQuestionIndex - 1,
-        isAnswering: false
+        isAnswering: false // Keep this false to show previous answers
       }));
     }
   };
