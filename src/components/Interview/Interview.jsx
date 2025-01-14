@@ -105,10 +105,16 @@ class Interview extends BaseComponent {
         
         Provide feedback in JSON format:
         {
-          "score": "excellent|good|fair",
+          "score": "excellent|good|moderate|poor",
           "feedback": "detailed feedback explaining strengths and areas for improvement",
           "improvements": ["specific suggestion 1", "specific suggestion 2"]
         }
+
+        Score criteria:
+        - excellent: Comprehensive, well-structured answer that fully addresses the question with specific examples
+        - good: Solid answer that addresses most aspects of the question
+        - moderate: Basic answer that partially addresses the question but lacks depth
+        - poor: Incomplete or off-topic answer that doesn't adequately address the question
       `;
 
       const response = await ApiService.makeRequest(prompt);
@@ -169,11 +175,12 @@ class Interview extends BaseComponent {
     if (!feedback) return null;
 
     const getScoreClass = (score) => {
-      switch (score) {
+      switch (score.toLowerCase()) {
         case 'excellent': return 'score-excellent';
         case 'good': return 'score-good';
-        case 'fair': return 'score-fair';
-        default: return 'score-fair';
+        case 'moderate': return 'score-moderate';
+        case 'poor': return 'score-poor';
+        default: return 'score-moderate';
       }
     };
 
@@ -187,6 +194,7 @@ class Interview extends BaseComponent {
         </div>
         <div className="feedback-content">
           <p>{feedback.feedback}</p>
+          
           {feedback.improvements && feedback.improvements.length > 0 && (
             <div className="improvements">
               <h5>Suggestions for Improvement:</h5>

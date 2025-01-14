@@ -157,11 +157,16 @@
 }
 
 .score-good {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.score-moderate {
   background-color: rgba(245, 158, 11, 0.1);
   color: #f59e0b;
 }
 
-.score-fair {
+.score-poor {
   background-color: rgba(239, 68, 68, 0.1);
   color: #ef4444;
 }
@@ -170,6 +175,45 @@
   color: var(--text-secondary);
   font-size: 0.975rem;
   line-height: 1.6;
+}
+
+.feedback-content p {
+  margin-bottom: 1.5rem;
+}
+
+.improvements {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.improvements h5 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.improvements ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.improvements li {
+  color: var(--text-secondary);
+  font-size: 0.975rem;
+  line-height: 1.6;
+  padding-left: 1.5rem;
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.improvements li::before {
+  content: "•";
+  position: absolute;
+  left: 0.5rem;
+  color: var(--color-primary);
 }
 
 .navigation-buttons {
