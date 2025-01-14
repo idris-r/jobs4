@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import { SECTIONS, PROMPTS } from './utils/constants';
 import { useApi } from './hooks/useApi';
@@ -8,12 +8,15 @@ import Analysis from './components/Analysis/Analysis';
 import ActionableItems from './components/ActionableItems/ActionableItems';
 import OptimizeCV from './components/OptimizeCV/OptimizeCV';
 import CoverLetter from './components/CoverLetter/CoverLetter';
+import Interview from './components/Interview/Interview';
+import { extractNameFromCV } from './utils/nameExtractor';
 import { 
   DocumentTextIcon, 
   ChartBarIcon, 
   ClipboardDocumentListIcon, 
   DocumentDuplicateIcon, 
   EnvelopeIcon,
+  ChatBubbleBottomCenterTextIcon,
   SunIcon,
   MoonIcon
 } from '@heroicons/react/24/outline';
@@ -22,12 +25,12 @@ const MENU_ITEMS = [
   { id: SECTIONS.INPUT, icon: DocumentTextIcon, label: 'Input' },
   { id: SECTIONS.ANALYSIS, icon: ChartBarIcon, label: 'Analysis' },
   { id: SECTIONS.ACTIONABLE, icon: ClipboardDocumentListIcon, label: 'Actions' },
-  { id: SECTIONS.OPTIMIZE, icon: DocumentDuplicateIcon, label: 'Optimize' },
-  { id: SECTIONS.COVER, icon: EnvelopeIcon, label: 'Cover Letter' }
+  { id: SECTIONS.OPTIMIZE, icon: DocumentDuplicateIcon, label: 'Optimise CV' },
+  { id: SECTIONS.COVER, icon: EnvelopeIcon, label: 'Cover Letter' },
+  { id: SECTIONS.INTERVIEW, icon: ChatBubbleBottomCenterTextIcon, label: 'Interview Questions' }
 ];
 
 function App() {
-  // State Management
   const [state, setState] = useState({
     cvText: '',
     jobDescription: '',
@@ -37,16 +40,22 @@ function App() {
     originalFile: null
   });
 
-  // API Hooks
   const analysisApi = useApi();
   const actionsApi = useApi();
   const coverLetterApi = useApi();
   const optimizeApi = useApi();
+  const interviewApi = useApi();
 
-  // Computed Properties
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      setState(prev => ({ ...prev, isDarkMode: savedTheme === 'dark' }));
+      document.body.classList.toggle('light-mode', savedTheme === 'light');
+    }
+  }, []);
+
   const isInputEmpty = !state.cvText.trim() || !state.jobDescription.trim();
 
-  // Event Handlers
   const handleCvChange = useCallback((value, originalFile = null) => {
     setState(prev => ({
       ...prev,
@@ -64,46 +73,83 @@ function App() {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setState(prev => ({ ...prev, isDarkMode: !prev.isDarkMode }));
-    document.body.classList.toggle('light-mode');
+    setState(prev => {
+      const newIsDarkMode = !prev.isDarkMode;
+      localStorage.setItem('theme', newIsDarkMode ? 'dark' : 'light');
+      document.body.classList.toggle('light-mode', !newIsDarkMode);
+      return { ...prev, isDarkMode: newIsDarkMode };
+    });
   }, []);
 
-  // API Handlers
   const handleAnalyze = async () => {
-    if (isInputEmpty) return;
+    if (isInputEmpty) return false;
 
-    const result = await analysisApi.execute(
-      PROMPTS.ANALYZE(state.cvText, state.jobDescription),
-      true
-    );
+    try {
+      const [analysisResult, actionsResult, optimizeResult] = await Promise.all([
+        analysisApi.execute(
+          PROMPTS.ANALYZE(state.cvText, state.jobDescription),
+          true
+        ),
+        actionsApi.execute(
+          PROMPTS.ACTIONS(state.cvText, state.jobDescription)
+        ),
+        optimizeApi.execute(
+          PROMPTS.OPTIMIZE(state.cvText, state.jobDescription)
+        )
+      ]);
 
-    if (result) {
-      await actionsApi.execute(
-        PROMPTS.ACTIONS(state.cvText, state.jobDescription)
-      );
-      handleSectionChange(SECTIONS.ANALYSIS);
+      if (analysisResult) {
+        handleSectionChange(SECTIONS.ANALYSIS);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      return false;
     }
   };
 
   const handleGenerateCoverLetter = async () => {
     if (isInputEmpty) return;
     
-    await coverLetterApi.execute(
+    const result = await coverLetterApi.execute(
       PROMPTS.COVER_LETTER(state.cvText, state.jobDescription, state.wordLimit)
     );
+
+    if (result) {
+      return formatCoverLetter(result);
+    }
   };
 
-  const handleOptimizeCV = async () => {
+  const handleGenerateQuestions = async () => {
     if (isInputEmpty) return;
     
-    await optimizeApi.execute(
-      PROMPTS.OPTIMIZE(state.cvText, state.jobDescription),
-      false,
-      2000
-    );
+    try {
+      const result = await interviewApi.execute(
+        PROMPTS.INTERVIEW_QUESTIONS(state.cvText, state.jobDescription),
+        true
+      );
+      return result;
+    } catch (error) {
+      console.error('Failed to generate interview questions:', error);
+      return null;
+    }
   };
 
-  // Render Helpers
+  const formatCoverLetter = (text) => {
+    const today = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const userName = extractNameFromCV(state.cvText);
+
+    return text
+      .replace('[Your Name]', userName)
+      .replace('[Date]', today);
+  };
+
   const renderSection = () => {
     const sections = {
       [SECTIONS.INPUT]: (
@@ -113,14 +159,15 @@ function App() {
           onCvChange={handleCvChange}
           onJobChange={handleInputChange('jobDescription')}
           onAnalyze={handleAnalyze}
-          isLoading={analysisApi.loading}
-          error={analysisApi.error}
+          isLoading={analysisApi.loading || actionsApi.loading || optimizeApi.loading}
+          error={analysisApi.error || actionsApi.error || optimizeApi.error}
         />
       ),
       [SECTIONS.ANALYSIS]: (
         <Analysis
           score={analysisApi.data?.score}
           justification={analysisApi.data?.justification}
+          breakdown={analysisApi.data?.breakdown}
           cvText={state.cvText}
           jobDescription={state.jobDescription}
           error={analysisApi.error}
@@ -134,7 +181,6 @@ function App() {
       ),
       [SECTIONS.OPTIMIZE]: (
         <OptimizeCV
-          onOptimize={handleOptimizeCV}
           optimizedCV={optimizeApi.data}
           originalCV={state.cvText}
           originalFile={state.originalFile}
@@ -151,63 +197,66 @@ function App() {
           isLoading={coverLetterApi.loading}
           error={coverLetterApi.error}
         />
+      ),
+      [SECTIONS.INTERVIEW]: (
+        <Interview
+          cvText={state.cvText}
+          jobDescription={state.jobDescription}
+          error={interviewApi.error}
+          isLoading={interviewApi.loading}
+          onGenerate={handleGenerateQuestions}
+          questions={interviewApi.data}
+        />
       )
     };
 
     return sections[state.activeSection] || null;
   };
 
-  const renderNavigation = () => (
-    <nav className="side-menu">
-      <div className="menu-header">
-        <h1>CV Matcher</h1>
-      </div>
-      
-      <ul>
-        {MENU_ITEMS.map(({ id, icon: Icon, label }) => (
-          <MenuItem
-            key={id}
-            isActive={state.activeSection === id}
-            disabled={isInputEmpty && id !== SECTIONS.INPUT}
-            onClick={() => !isInputEmpty && handleSectionChange(id)}
-          >
-            <Icon className="w-5 h-5" />
-            <span>{label}</span>
-          </MenuItem>
-        ))}
-      </ul>
-      
-      <div className="theme-toggle">
-        <Button onClick={toggleTheme} className="theme-button">
-          {state.isDarkMode ? (
-            <>
-              <SunIcon className="w-5 h-5" />
-              <span>Light Mode</span>
-            </>
-          ) : (
-            <>
-              <MoonIcon className="w-5 h-5" />
-              <span>Dark Mode</span>
-            </>
-          )}
-        </Button>
-      </div>
-    </nav>
-  );
-
   return (
     <div className={`app-container ${state.isDarkMode ? 'dark' : 'light'}`}>
-      {renderNavigation()}
+      <nav className="side-menu">
+        <div className="menu-header">
+          <h1>CV Matcher</h1>
+        </div>
+        
+        <ul>
+          {MENU_ITEMS.map(({ id, icon: Icon, label }) => (
+            <MenuItem
+              key={id}
+              isActive={state.activeSection === id}
+              disabled={isInputEmpty && id !== SECTIONS.INPUT}
+              onClick={() => !isInputEmpty && handleSectionChange(id)}
+            >
+              <Icon className="w-5 h-5" />
+              <span>{label}</span>
+            </MenuItem>
+          ))}
+        </ul>
+        
+        <div className="theme-toggle">
+          <button 
+            className="theme-toggle-button"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            {state.isDarkMode ? (
+              <>
+                <SunIcon className="theme-icon" />
+                <span>Light Mode</span>
+              </>
+            ) : (
+              <>
+                <MoonIcon className="theme-icon" />
+                <span>Dark Mode</span>
+              </>
+            )}
+          </button>
+        </div>
+      </nav>
       
       <main className="content-area">
         {renderSection()}
-        
-        {/* Global Error Display */}
-        {(analysisApi.error || actionsApi.error || optimizeApi.error || coverLetterApi.error) && (
-          <div className="error">
-            {analysisApi.error || actionsApi.error || optimizeApi.error || coverLetterApi.error}
-          </div>
-        )}
       </main>
     </div>
   );

@@ -27,6 +27,16 @@ export class ApiService {
   }
 
   static parseJsonResponse(content) {
-    return JSON.parse(content.replace(/```json|```/g, '').trim());
+    try {
+      // First try to parse as pure JSON
+      return JSON.parse(content);
+    } catch (e) {
+      // If that fails, try to extract JSON from the string
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      throw new Error('Could not parse JSON response');
+    }
   }
 }

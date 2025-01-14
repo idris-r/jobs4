@@ -10,17 +10,3 @@ export class BaseComponent extends React.Component {
     return isLoading && <div className="loading">{text}</div>;
   }
 }
-
-export const withLoading = (WrappedComponent) => {
-  return class extends React.Component {
-    render() {
-      const { isLoading, loadingText, ...props } = this.props;
-      return (
-        <>
-          {isLoading && <div className="loading">{loadingText || 'Loading...'}</div>}
-          <WrappedComponent {...props} />
-        </>
-      );
-    }
-  };
-};

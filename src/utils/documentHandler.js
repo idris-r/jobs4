@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 export class DocumentHandler {
   static originalDocument = null;
   static originalParagraphs = [];
+  static isOfficeInitialized = false;
 
   static async extractText(file) {
     const fileType = file.name.split('.').pop().toLowerCase();
@@ -34,12 +35,14 @@ export class DocumentHandler {
       // Extract HTML to preserve structure
       const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
       
-      // Store original paragraphs
+      // Store original paragraphs with their positions
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlResult.value, 'text/html');
-      this.originalParagraphs = Array.from(doc.body.children).map(p => ({
+      this.originalParagraphs = Array.from(doc.body.children).map((p, index) => ({
         text: p.textContent,
-        html: p.outerHTML
+        html: p.outerHTML,
+        index,
+        startPosition: textResult.value.indexOf(p.textContent)
       }));
 
       return {
@@ -58,10 +61,13 @@ export class DocumentHandler {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
-        const paragraphs = text.split('\n').map(p => ({
+        const paragraphs = text.split('\n').map((p, index) => ({
           text: p,
-          html: `<p>${p}</p>`
+          html: `<p>${p}</p>`,
+          index,
+          startPosition: text.indexOf(p)
         }));
+        this.originalParagraphs = paragraphs;
         resolve({
           text,
           originalFile: file,
@@ -73,52 +79,184 @@ export class DocumentHandler {
     });
   }
 
-  static async generateOptimizedDoc(originalText, optimizedText) {
-    if (!this.originalDocument || !this.originalParagraphs.length) {
+  static async initializeOffice() {
+    if (this.isOfficeInitialized) return;
+
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js';
+      script.onload = async () => {
+        try {
+          // Wait for Office to initialize
+          await new Promise((resolve) => {
+            if (window.Office) {
+              Office.onReady(() => resolve());
+            } else {
+              reject(new Error('Office.js failed to load'));
+            }
+          });
+          
+          this.isOfficeInitialized = true;
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      };
+      script.onerror = () => reject(new Error('Failed to load Office.js'));
+      document.head.appendChild(script);
+    });
+  }
+
+  static async automateDocumentChanges(improvements) {
+    if (!this.originalDocument) {
       throw new Error('No original document found');
     }
 
     try {
-      // Split optimized text into paragraphs
-      const optimizedParagraphs = optimizedText.split('\n').filter(p => p.trim());
-      
-      // Create a copy of original paragraphs
-      let modifiedParagraphs = [...this.originalParagraphs];
+      // Initialize Office.js
+      await this.initializeOffice();
 
-      // Replace content while keeping formatting
-      optimizedParagraphs.forEach((newText, index) => {
-        if (index < modifiedParagraphs.length) {
-          const originalHtml = modifiedParagraphs[index].html;
-          // Replace text content while preserving HTML structure
-          modifiedParagraphs[index].html = originalHtml.replace(
-            />([^<]+)</g,
-            `>${newText}<`
-          );
+      // Create a URL for the original document
+      const fileUrl = URL.createObjectURL(this.originalDocument);
+
+      // Try to open the document in Office Online
+      await Word.run(async (context) => {
+        // Open the document
+        const document = context.application.createDocument(fileUrl);
+        await context.sync();
+
+        // Apply each improvement
+        for (const improvement of improvements) {
+          // Search for the original text
+          let searchResults = document.body.search(improvement.original);
+          context.load(searchResults);
+          await context.sync();
+
+          // Replace with improved text
+          searchResults.items.forEach(result => {
+            result.insertText(improvement.improved, 'Replace');
+          });
+          await context.sync();
         }
+
+        // Save the document
+        document.save();
+        await context.sync();
       });
 
-      // Create modified HTML
-      const modifiedHtml = modifiedParagraphs.map(p => p.html).join('');
+      URL.revokeObjectURL(fileUrl);
+    } catch (error) {
+      console.error('Automation error:', error);
+      throw new Error('Automated updates failed. Falling back to manual mode...');
+    }
+  }
 
-      // Create a new file with modified content
-      const blob = new Blob([modifiedHtml], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const newFile = new File([blob], 'optimized-cv.docx', {
+  static async openAndEditDocument(improvements) {
+    if (!this.originalDocument) {
+      throw new Error('No original document found');
+    }
+
+    try {
+      // Create a copy of the original file
+      const fileContent = await this.originalDocument.arrayBuffer();
+      const blob = new Blob([fileContent], { 
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+      });
+      
+      // Create a URL for the file
+      const fileUrl = URL.createObjectURL(blob);
+      
+      // Create a message with instructions
+      const instructions = improvements.map((imp, index) => `
+        Change ${index + 1}:
+        Find: "${imp.original}"
+        Replace with: "${imp.improved}"
+      `).join('\n');
+      
+      // Create a modal with instructions
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+        max-width: 80%;
+        max-height: 80vh;
+        overflow-y: auto;
+        color: black;
+      `;
+      
+      modal.innerHTML = `
+        <h3 style="margin-bottom: 15px; color: #1a1a1a;">Instructions for Document Updates</h3>
+        <p style="margin-bottom: 15px; color: #4a5568;">Your document will open in a new tab. Please make the following changes:</p>
+        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px; white-space: pre-wrap; color: #2d3748;">${instructions}</pre>
+        <button id="openDoc" style="background: #4F46E5; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Open Document</button>
+        <button id="closeModal" style="background: #6B7280; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">Close</button>
+      `;
+
+      // Add overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+      `;
+
+      document.body.appendChild(overlay);
+      document.body.appendChild(modal);
+
+      // Add event listeners
+      document.getElementById('openDoc').addEventListener('click', () => {
+        window.open(fileUrl, '_blank');
+      });
+
+      const closeModal = () => {
+        document.body.removeChild(modal);
+        document.body.removeChild(overlay);
+        URL.revokeObjectURL(fileUrl);
+      };
+
+      document.getElementById('closeModal').addEventListener('click', closeModal);
+      overlay.addEventListener('click', closeModal);
+
+    } catch (error) {
+      console.error('Error opening document:', error);
+      throw new Error('Error opening document for editing');
+    }
+  }
+
+  static findParagraphForText(text) {
+    // Find the paragraph that contains the exact text or the closest match
+    return this.originalParagraphs.find(p => 
+      p.text.includes(text) || text.includes(p.text)
+    );
+  }
+
+  static async downloadModifiedDocument(content, filename = 'optimized-cv.docx') {
+    try {
+      const blob = new Blob([content], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       });
-
-      // Download the file
-      const url = URL.createObjectURL(newFile);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'optimized-cv.docx';
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-
     } catch (error) {
-      console.error('Error generating document:', error);
-      throw new Error('Error generating optimized document');
+      console.error('Error downloading document:', error);
+      throw new Error('Error saving the modified document');
     }
   }
 }

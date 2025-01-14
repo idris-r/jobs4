@@ -3,7 +3,7 @@ import './Input.css';
 import { BaseComponent } from '../common/BaseComponent';
 import { SectionHeader, Button, TextArea } from '../common/CommonComponents';
 import { DocumentHandler } from '../../utils/documentHandler';
-import { DocumentTextIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, ArrowUpTrayIcon, CheckIcon } from '@heroicons/react/24/outline';
 
 class Input extends BaseComponent {
   constructor(props) {
@@ -11,7 +11,8 @@ class Input extends BaseComponent {
     this.fileInputRef = React.createRef();
     this.state = {
       fileName: '',
-      isProcessing: false
+      isProcessing: false,
+      isComplete: false
     };
   }
 
@@ -31,18 +32,27 @@ class Input extends BaseComponent {
     }
   };
 
+  handleAnalyze = async () => {
+    this.setState({ isComplete: false });
+    try {
+      await this.props.onAnalyze();
+      this.setState({ isComplete: true });
+    } catch (error) {
+      console.error('Analysis failed:', error);
+    }
+  };
+
   render() {
     const { 
       cvText, 
-      jobDescription, 
-      onCvChange, 
-      onJobChange, 
-      onAnalyze, 
+      jobDescription,
+      onCvChange,
+      onJobChange,
       isLoading,
       error 
     } = this.props;
 
-    const { isProcessing, fileName } = this.state;
+    const { isProcessing, fileName, isComplete } = this.state;
 
     return (
       <div className="input-section">
@@ -61,14 +71,15 @@ class Input extends BaseComponent {
               className="upload-button"
               disabled={isProcessing}
             >
-              <DocumentTextIcon className="w-5 h-5" />
-              <span>
+              <ArrowUpTrayIcon className="upload-icon" />
+              <span className="upload-text">
                 {isProcessing ? 'Processing...' : 'Upload CV (.docx, .txt)'}
               </span>
             </Button>
             {fileName && (
               <div className="file-name">
-                Uploaded: {fileName}
+                <DocumentTextIcon />
+                <span>{fileName}</span>
               </div>
             )}
           </div>
@@ -88,12 +99,29 @@ class Input extends BaseComponent {
           />
         </div>
 
-        <Button 
-          onClick={onAnalyze} 
-          disabled={isLoading || isProcessing}
-        >
-          {isLoading ? 'Analyzing...' : 'Analyze'}
-        </Button>
+        <div className="analyse-button">
+          <Button 
+            onClick={this.handleAnalyze} 
+            disabled={isLoading || isProcessing}
+            className={`primary ${isComplete ? 'complete' : ''}`}
+          >
+            {isComplete ? (
+              <>
+                <CheckIcon className="w-5 h-5" />
+                <span>Complete</span>
+              </>
+            ) : (
+              <span>{isLoading ? 'Analyzing...' : 'Analyze'}</span>
+            )}
+          </Button>
+          {isLoading && (
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div className="progress-bar-fill"></div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {this.renderError(error)}
       </div>
